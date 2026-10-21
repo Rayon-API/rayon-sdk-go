@@ -6,14 +6,9 @@ Server-side Go client for Rayon header and form generation and account usage. Go
 
 ## Install
 
-Unreleased local source. In your consuming Go module, point to this checkout:
-
 ```sh
-go mod edit -require=github.com/Rayon-API/rayon-sdk-go@v0.0.0
-go mod edit -replace=github.com/Rayon-API/rayon-sdk-go=/absolute/path/to/rayon-sdk-go
+go get github.com/Rayon-API/rayon-sdk-go@v1.0.0
 ```
-
-After repository/tag publication, install with `go get github.com/Rayon-API/rayon-sdk-go`.
 
 ## Check usage
 
