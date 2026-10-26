@@ -18,8 +18,14 @@ A maintainer must create the public GitHub repository at the exact module path a
 Local testing and this repository's CI do not create commits, tags, repositories or releases.
 
 
-Version 2.0.0 is coordinated with backend preparation API deployment. Confirm
-both preparation routes are deployed before tagging/publishing. Verify explicit
+Version 2.0.0 supports the available additive preparation API at
+`/v1/materials/prepare` and `/v1/materials/preparations/{preparation_id}`. Merge
+this postactivation release copy and tag/publish only after the maintainer records
+backend and ingress GO. Ready requires validated complete output and Rust
+publication; partial output is not ready, and ready preparations execute only
+in Rust. The 30-day migration schedule is announced separately, with no fixed
+cutoff set here. This release does not enable mandatory prepared-only/Rust-only
+generation. Verify explicit
 preparation, strict response metadata, terminal failures, bounded context-aware
 polling and transient GET retries. Build a clean external consumer using the
 `/v2` import path after publication. Local tests do not deploy the API or publish

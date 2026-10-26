@@ -72,9 +72,16 @@ See [API reference](https://docs.rayonapi.com/api-reference) for detailed fields
 
 ## Explicit material preparation (v2)
 
-This release is coordinated with backend preparation API deployment. Confirm that
-the preparation endpoints are available before using these methods against a
-deployed API. Version 2 uses the `/v2` module and import path.
+The additive material preparation API is available through
+`POST /v1/materials/prepare` and
+`GET /v1/materials/preparations/{preparation_id}`. Explicitly prepare the full
+context and wait for ready before starting a workload. Ready requires complete
+output validation and Rust publication; partial output is not ready, and ready
+preparations execute only in Rust. Version 2 uses the `/v2` module and import path.
+
+The 30-day migration schedule will be announced separately. No fixed cutoff is
+set here, and mandatory prepared-only/Rust-only generation is not enabled by
+this release.
 
 ```go
 job, err := client.Prepare(ctx, shape) // existing full ShapeRequest
