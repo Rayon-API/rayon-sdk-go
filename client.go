@@ -269,7 +269,17 @@ func (c *Client) Usage(ctx context.Context) (UsageResult, error) {
 	}
 	return UsageResult(m), nil
 }
-func (c *Client) send(ctx context.Context, method, path string, body *ShapeRequest) (any, *Error, error) {
+
+type sendOptions struct {
+	preparation bool
+	idempotency string
+}
+
+func (c *Client) send(ctx context.Context, method, path string, body *ShapeRequest, opts ...sendOptions) (any, *Error, error) {
+	var option sendOptions
+	if len(opts) > 0 {
+		option = opts[0]
+	}
 	if c.isClosed() {
 		return nil, nil, newError("validation")
 	}
@@ -289,6 +299,9 @@ func (c *Client) send(ctx context.Context, method, path string, body *ShapeReque
 		return nil, nil, newError("validation")
 	}
 	r.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if option.idempotency != "" {
+		r.Header.Set("Idempotency-Key", option.idempotency)
+	}
 	r.Header.Set("Accept", "application/json")
 	r.Header.Set("Accept-Encoding", "identity")
 	if body != nil {
@@ -328,7 +341,7 @@ func (c *Client) send(ctx context.Context, method, path string, body *ShapeReque
 		err.RequestID = meta.RequestID
 		return nil, err, err
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != 200 && !(option.preparation && method == "POST" && resp.StatusCode == 202) {
 		if readErr == nil {
 			meta = metadata(kind, resp.StatusCode, resp.Header, v, c.apiKey)
 		}

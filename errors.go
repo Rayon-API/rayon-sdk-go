@@ -13,6 +13,7 @@ import (
 // messages and transport causes are deliberately excluded.
 type Error struct {
 	Kind                                                                      string
+	PreparationID                                                             string
 	StatusCode                                                                int
 	RequestID, RetryAfter, Code, Reason, Action, Domain, Field, BillingStatus string
 	Retryable                                                                 *bool
@@ -30,7 +31,7 @@ func (e *Error) GoString() string {
 	return fmt.Sprintf("RayonError{Kind:%q, StatusCode:%d, RequestID:%q, Code:%q}", e.Kind, e.StatusCode, e.RequestID, e.Code)
 }
 
-var messages = map[string]string{"validation": "Invalid Rayon API request options.", "auth": "Rayon API denied authentication or access.", "rate_limit": "Rayon API request limit reached.", "http": "Rayon API returned an unsuccessful HTTP response.", "invalid_response": "Rayon API returned an invalid response.", "network": "Rayon API request could not be completed.", "timeout": "Rayon API request timed out.", "aborted": "Rayon API request was aborted."}
+var messages = map[string]string{"preparation_failed": "Rayon material preparation failed.", "preparation_expired": "Rayon material preparation expired.", "validation": "Invalid Rayon API request options.", "auth": "Rayon API denied authentication or access.", "rate_limit": "Rayon API request limit reached.", "http": "Rayon API returned an unsuccessful HTTP response.", "invalid_response": "Rayon API returned an invalid response.", "network": "Rayon API request could not be completed.", "timeout": "Rayon API request timed out.", "aborted": "Rayon API request was aborted."}
 
 func newError(kind string) *Error { return &Error{Kind: kind} }
 
