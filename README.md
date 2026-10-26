@@ -7,7 +7,7 @@ Server-side Go client for Rayon header and form generation and account usage. Go
 ## Install
 
 ```sh
-go get github.com/Rayon-API/rayon-sdk-go@v1.0.0
+go get github.com/Rayon-API/rayon-sdk-go/v2@v2.0.0
 ```
 
 ## Check usage
@@ -21,7 +21,7 @@ if err != nil { log.Fatal(err) }
 fmt.Println(usage)
 ```
 
-Import the package as `rayon "github.com/Rayon-API/rayon-sdk-go"`.
+Import the package as `rayon "github.com/Rayon-API/rayon-sdk-go/v2"`.
 Usage is read-only. Numeric usage values use `json.Number` to preserve precision.
 
 ## Generate
@@ -38,7 +38,7 @@ import (
     "os"
     "time"
 
-    rayon "github.com/Rayon-API/rayon-sdk-go"
+    rayon "github.com/Rayon-API/rayon-sdk-go/v2"
 )
 
 func main() {
@@ -68,3 +68,48 @@ For form telemetry, set `Mode: "form"`, POST with `application/x-www-form-urlenc
 Reuse a client for material caching and connection pooling. See [client behavior](docs/reference.md) for limits, recovery, cancellation and error handling.
 
 See [API reference](https://docs.rayonapi.com/api-reference) for detailed fields and limits, [SECURITY.md](SECURITY.md) for private reports and [RELEASE.md](RELEASE.md) for publishing.
+
+
+## Explicit material preparation (v2)
+
+The additive material preparation API is available through
+`POST /v1/materials/prepare` and
+`GET /v1/materials/preparations/{preparation_id}`. Explicitly prepare the full
+context and wait for ready before starting a workload. Ready requires complete
+output validation and Rust publication; partial output is not ready, and ready
+preparations execute only in Rust. Version 2 uses the `/v2` module and import path.
+
+The 30-day migration schedule will be announced separately. No fixed cutoff is
+set here, and mandatory prepared-only/Rust-only generation is not enabled by
+this release.
+
+```go
+job, err := client.Prepare(ctx, shape) // existing full ShapeRequest
+if err != nil { return err }
+ready, err := client.WaitUntilReady(ctx, job.PreparationID)
+if err != nil {
+    // *rayon.Error carries PreparationID so an existing job can be resumed.
+    return err
+}
+current, err := client.GetPreparation(ctx, ready.PreparationID)
+_ = current
+// Or explicitly combine job creation and waiting:
+ready, err = client.PrepareAndWait(ctx, shape)
+```
+
+`Prepare` and `GetPreparation` return safe `Preparation` state metadata.
+`WaitUntilReady` and `PrepareAndWait` return `ReadyMaterial` only after the server
+confirms `ready` and `execution_backend: "rust"`. Metadata includes material
+reference/expiry and readiness expiry, with no scripts, cookies or telemetry.
+Terminal states return typed errors with kinds `preparation_failed` or
+`preparation_expired`; timeout/cancellation and polling errors retain the safe
+`PreparationID`. Waiting lasts at most 60 seconds or the caller's earlier context
+deadline. Cancelling the wait leaves the server job running for later resumption.
+
+Readiness is scoped to the exact supplied source/profile/request/cookie/mode/form
+context and its lifetime. Each explicit prepare uses a new `Idempotency-Key`, with
+no automatic ambiguous POST retry. Bounded long polling retries only transient
+GET failures with jitter. Readiness never shares or populates the source-only
+generation cache. `Generate` keeps its signature and result frame, never prepares
+or waits implicitly, and preserves the existing confirmed unbilled source-miss
+recovery behavior.
