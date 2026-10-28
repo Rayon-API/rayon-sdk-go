@@ -25,6 +25,8 @@ type FormMetadata struct {
 	ID   *string `json:"id,omitempty"`
 	Name *string `json:"name,omitempty"`
 }
+
+// ShapeRequest selects managed material when Scripts and MaterialRef are omitted in header mode.
 type ShapeRequest struct {
 	SourceURL      string           `json:"source_url"`
 	Scripts        []ScriptMaterial `json:"scripts,omitempty"`
@@ -54,15 +56,18 @@ func (s *ShapeRequest) UnmarshalJSON(data []byte) error {
 	}
 	_, hasScripts := m["scripts"]
 	_, hasRef := m["material_ref"]
-	if hasScripts == hasRef {
+	if hasScripts && hasRef {
 		return newError("validation")
 	}
 	if hasScripts {
 		if _, ok := m["scripts"].([]any); !ok {
 			return newError("validation")
 		}
-	} else if _, ok := m["material_ref"].(string); !ok {
-		return newError("validation")
+	} else if hasRef {
+		ref, ok := m["material_ref"].(string)
+		if !ok || !refRE.MatchString(ref) {
+			return newError("validation")
+		}
 	}
 	for _, k := range []string{"document_cookie", "mode"} {
 		if v, present := m[k]; present {
@@ -104,6 +109,13 @@ func (s *ShapeRequest) UnmarshalJSON(data []byte) error {
 }
 
 type ShapeResult struct {
+	Path                string   `json:"path,omitempty"`
+	MaterialReuse       *bool    `json:"material_reuse,omitempty"`
+	DiscoveryDurationMS *float64 `json:"discovery_duration_ms,omitempty"`
+	DiscoveryState      string   `json:"discovery_state,omitempty"`
+	FallbackReason      string   `json:"fallback_reason,omitempty"`
+	FallbackMessage     string   `json:"fallback_message,omitempty"`
+
 	Headers           map[string]string `json:"headers,omitempty"`
 	FormFields        map[string]string `json:"form_fields,omitempty"`
 	FormBody          string            `json:"form_body,omitempty"`

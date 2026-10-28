@@ -41,7 +41,7 @@ func validURL(s string) bool {
 }
 func validateShape(s ShapeRequest) (ShapeRequest, error) {
 	bad := func() (ShapeRequest, error) { return ShapeRequest{}, newError("validation") }
-	if !validURL(s.SourceURL) || (s.Scripts != nil) == (s.MaterialRef != "") {
+	if !validURL(s.SourceURL) || (s.Scripts != nil && s.MaterialRef != "") || (s.Mode == "form" && s.Scripts == nil && s.MaterialRef == "") {
 		return bad()
 	}
 	if s.Scripts != nil {
@@ -58,7 +58,7 @@ func validateShape(s ShapeRequest) (ShapeRequest, error) {
 		if total > 3*1024*1024 {
 			return bad()
 		}
-	} else if !refRE.MatchString(s.MaterialRef) {
+	} else if s.MaterialRef != "" && !refRE.MatchString(s.MaterialRef) {
 		return bad()
 	}
 	profile, e := ValidateProfile(s.Profile)
