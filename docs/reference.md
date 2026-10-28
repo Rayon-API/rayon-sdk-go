@@ -1,5 +1,9 @@
 # Client behavior
 
+Managed header generation omits Scripts and MaterialRef on every call. It selects
+current registered public material without pinning a returned reference. The
+source-cache behavior below applies only to explicit material inputs.
+
 Reuse a client for connection pooling and material caching. It retains up to 128 source bundles and 16 MiB, refreshes within five seconds of expiry, and coalesces simultaneous first uploads. Every caller still generates its own fresh result. Cache state is isolated per client and cleared on close or eviction. Keep your own source copy. Failed uploads fail queued calls; canceling a queued caller does not cancel its owner's upload.
 
 The only automatic retry is one HTTP 422 `material_expired` response explicitly marked `billing_status: "not_charged"`, when original source is still retained. Other outcomes are never retried by the SDK. Use `errors.As` with `*rayon.Error` for sanitized `Kind`, `StatusCode`, `RequestID`, `Code`, `Reason`, `Action`, `BillingStatus` and `RetryAfter`. Raw server messages and transport errors are excluded. Check request history before resending ambiguous outcomes.

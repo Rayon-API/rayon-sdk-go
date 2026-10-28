@@ -36,6 +36,63 @@ func parseResult(v any, meta *Error, key, mode string) (*ShapeResult, error) {
 		return bad()
 	}
 	r := &ShapeResult{RequestID: id, GenerationMS: ms, ProfileUsed: Profile(profile), MaterialRef: ref, MaterialExpiresAt: expires}
+	for _, name := range []string{"path", "material_reuse", "discovery_duration_ms", "discovery_state", "fallback_reason", "fallback_message"} {
+		v, exists := m[name]
+		if !exists {
+			continue
+		}
+		switch name {
+		case "path":
+			s, ok := v.(string)
+			if !ok || (s != "native" && s != "isolated") {
+				return bad()
+			}
+			r.Path = s
+		case "material_reuse":
+			b, ok := v.(bool)
+			if !ok {
+				return bad()
+			}
+			r.MaterialReuse = &b
+		case "discovery_duration_ms":
+			if v == nil {
+				continue
+			}
+			n, ok := v.(json.Number)
+			if !ok {
+				return bad()
+			}
+			f, ok := number(n)
+			if !ok || f < 0 || f > 3600000 {
+				return bad()
+			}
+			r.DiscoveryDurationMS = &f
+		case "fallback_message":
+			s, ok := v.(string)
+			if !ok || len(s) > 512 || strings.Contains(s, key) {
+				return bad()
+			}
+			for _, c := range s {
+				if c < 32 || c > 126 {
+					return bad()
+				}
+			}
+			r.FallbackMessage = s
+		default:
+			if v == nil {
+				continue
+			}
+			s, ok := v.(string)
+			if !ok || safe(s, key, codeRE) == "" {
+				return bad()
+			}
+			if name == "discovery_state" {
+				r.DiscoveryState = s
+			} else {
+				r.FallbackReason = s
+			}
+		}
+	}
 	if mode == "form" {
 		if _, ok = m["headers"]; ok {
 			return bad()

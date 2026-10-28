@@ -12,7 +12,7 @@ func TestIncompleteGenerationGivesNeutralGuidance(t *testing.T) {
 	}}, "synthetic-test-key")
 	if e.Error() != "Generation did not complete." ||
 		!strings.Contains(e.Action, "loader") ||
-		!strings.Contains(e.Action, "If all required scripts were supplied") {
+		!strings.Contains(e.Action, "For managed material, contact support with the request ID") {
 		t.Fatalf("missing actionable guidance: %s; %s", e.Error(), e.Action)
 	}
 	if e.Retryable == nil || *e.Retryable {
