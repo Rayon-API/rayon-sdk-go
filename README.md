@@ -58,7 +58,7 @@ pointers encode null; `rayon.String("")` preserves an empty string. GET/HEAD
 require a null body. Use `rayon.ValidateProfile` for offline profile validation.
 
 Apply every returned header unchanged, including optional `a0`, to the exact
-request. Header names may use a hyphen before the suffix or a compact prefix; preserve them exactly. Keep application headers and session state in your target client.
+request. Keep application headers and session state in your target client.
 Generate fresh telemetry for each request and inspect the target response to
 check acceptance. Rayon returns no target cookies.
 
@@ -76,7 +76,7 @@ Results retain optional `Path`, `MaterialReuse`, `DiscoveryState` and
 For an explicit override, supply either `scripts` (complete ordered sources) or
 `material_ref` (a private reference), never both. Omit the unused field; null and
 empty values are invalid. Customer uploads and references remain private to the
-API key. For an inline script, set `inline: true` and use the document URL; omit the flag for external scripts. Automatic requests should keep both fields omitted on every call so
+API key. Automatic requests should keep both fields omitted on every call so
 new public material can be selected.
 
 Form mode still requires explicit material. Set `mode: "form"`, supply the exact

@@ -11,7 +11,6 @@ type Profile map[string]any
 type ScriptMaterial struct {
 	URL    string `json:"url"`
 	Source string `json:"source"`
-	Inline bool   `json:"inline,omitempty"`
 }
 
 // TargetRequest describes the exact target request. Nil pointers encode JSON null;
@@ -61,20 +60,8 @@ func (s *ShapeRequest) UnmarshalJSON(data []byte) error {
 		return newError("validation")
 	}
 	if hasScripts {
-		scripts, ok := m["scripts"].([]any)
-		if !ok {
+		if _, ok := m["scripts"].([]any); !ok {
 			return newError("validation")
-		}
-		for _, value := range scripts {
-			script, ok := value.(map[string]any)
-			if !ok {
-				return newError("validation")
-			}
-			if inline, exists := script["inline"]; exists {
-				if _, ok := inline.(bool); !ok {
-					return newError("validation")
-				}
-			}
 		}
 	} else if hasRef {
 		ref, ok := m["material_ref"].(string)

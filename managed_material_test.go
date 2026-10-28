@@ -77,38 +77,3 @@ func TestInvalidOperationMetadata(t *testing.T) {
 		}
 	}
 }
-
-func TestCompactHeadersAndInlineMaterial(t *testing.T) {
-	calls := 0
-	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		if _, ok := body["scripts"]; !ok {
-			t.Error("inline flag lost in material identity")
-		}
-		calls++
-		out := response("ref_0123456789abcdef")
-		headers := map[string]string{}
-		for _, s := range []string{"a", "b", "c", "d", "f", "z", "a0"} {
-			headers["Compact"+s] = "value"
-		}
-		out["headers"] = headers
-		json.NewEncoder(w).Encode(out)
-	})
-	s := shape()
-	for _, inline := range []bool{false, true} {
-		s.Scripts[0].Inline = inline
-		r, e := c.Generate(context.Background(), s)
-		if e != nil || len(r.Headers) != 7 {
-			t.Fatalf("compact result: %v", e)
-		}
-	}
-	if calls != 2 {
-		t.Fatal(calls)
-	}
-	var decoded ShapeRequest
-	data := `{"source_url":"https://shop.example.com/","profile":{},"scripts":[{"url":"https://shop.example.com/","source":"/* authored */","inline":null}],"request":{"url":"https://shop.example.com/","method":"GET","content_type":null,"body":null}}`
-	if e := json.Unmarshal([]byte(data), &decoded); e == nil {
-		t.Fatal("null inline accepted")
-	}
-}

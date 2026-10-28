@@ -11,7 +11,7 @@ import (
 var contentTypeRE = regexp.MustCompile(`^[\w!#$&^.+-]+/[\w!#$&^.+-]+(?:\s*;[^\r\n]*)?$`)
 var formTypeRE = regexp.MustCompile(`(?i)^application/x-www-form-urlencoded(?:\s*;\s*charset\s*=\s*(?:"(?:utf-8|utf8)"|utf-8|utf8))?\s*$`)
 var formNameRE = regexp.MustCompile("^([!#$%&'*+\\-.^_`|~0-9A-Za-z]{1,128})([abcdfz])$")
-var headerNameRE = regexp.MustCompile("(?i)^([!#$%&'*+\\-.^_`|~0-9a-z]{1,128}-?)(a0|[abcdfz])$")
+var headerNameRE = regexp.MustCompile("(?i)^([!#$%&'*+\\-.^_`|~0-9a-z]{1,128})-(a0|[abcdfz])$")
 
 func controls(s string) bool {
 	for _, c := range s {
