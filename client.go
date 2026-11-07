@@ -3,7 +3,6 @@ package rayon
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
@@ -47,20 +46,8 @@ func WithTimeout(timeout time.Duration) Option {
 	}
 }
 
-type materialEntry struct {
-	ref, sourceURL string
-	scripts        []ScriptMaterial
-	expires        time.Time
-	size           int
-	sequence       uint64
-}
-type materialFlight struct {
-	done    chan struct{}
-	success bool
-}
-
-// Client owns its HTTP connection pool and an in-memory bounded material cache.
-// It is safe for concurrent calls. Close clears retained script source.
+// Client owns its HTTP connection pool and is safe for concurrent calls.
+// Solve requests never retain or upload script sources.
 type Client struct {
 	apiKey, baseURL string
 	timeout         time.Duration
@@ -68,10 +55,6 @@ type Client struct {
 	transport       *http.Transport
 	mu              sync.Mutex
 	closed          bool
-	cache           map[[32]byte]*materialEntry
-	flights         map[[32]byte]*materialFlight
-	cacheBytes      int
-	sequence        uint64
 }
 
 func NewClient(apiKey string, options ...Option) (*Client, error) {
@@ -93,7 +76,7 @@ func NewClient(apiKey string, options ...Option) (*Client, error) {
 		}
 	}
 	tr := &http.Transport{Proxy: http.ProxyFromEnvironment, DialContext: (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext, ForceAttemptHTTP2: true, MaxIdleConns: 100, IdleConnTimeout: 90 * time.Second, TLSHandshakeTimeout: 10 * time.Second, ExpectContinueTimeout: time.Second, DisableCompression: true, MaxResponseHeaderBytes: 64 * 1024}
-	c := &Client{apiKey: apiKey, baseURL: cfg.baseURL, timeout: cfg.timeout, transport: tr, cache: map[[32]byte]*materialEntry{}, flights: map[[32]byte]*materialFlight{}}
+	c := &Client{apiKey: apiKey, baseURL: cfg.baseURL, timeout: cfg.timeout, transport: tr}
 	c.http = &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return c, nil
 }
@@ -103,12 +86,7 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	if !c.closed {
 		c.closed = true
-		c.cache = map[[32]byte]*materialEntry{}
-		c.cacheBytes = 0
-		for k, f := range c.flights {
-			delete(c.flights, k)
-			close(f.done)
-		}
+
 	}
 	c.mu.Unlock()
 	c.transport.CloseIdleConnections()
@@ -122,8 +100,8 @@ func contextError(ctx context.Context) *Error {
 	return newError("timeout")
 }
 
-// Generate produces fresh header or form telemetry. The sole automatic retry is
-// an explicitly uncharged HTTP 422 material_expired rejection with retained source.
+// Generate uses ready managed material or a ready reference. It never prepares,
+// uploads sources or retries automatically.
 func (c *Client) Generate(ctx context.Context, shape ShapeRequest) (*ShapeResult, error) {
 	if ctx == nil || c.isClosed() {
 		return nil, newError("validation")
@@ -137,121 +115,18 @@ func (c *Client) Generate(ctx context.Context, shape ShapeRequest) (*ShapeResult
 	if e != nil {
 		return nil, e
 	}
-	scripts := body.Scripts
-	var key [32]byte
-	haveKey := false
-	if scripts != nil {
-		b, _ := marshalJSON([]any{body.SourceURL, scripts})
-		key = sha256.Sum256(b)
-		haveKey = true
-	} else {
-		c.mu.Lock()
-		for k, cached := range c.cache {
-			if cached.ref == body.MaterialRef && cached.sourceURL == body.SourceURL {
-				key = k
-				scripts = append([]ScriptMaterial(nil), cached.scripts...)
-				haveKey = true
-				break
-			}
-		}
-		c.mu.Unlock()
+	v, meta, err := c.send(ctx, "POST", "/v1/shape", &body)
+	if err != nil {
+		return nil, err
 	}
-	recovered := false
-	for {
-		if ctx.Err() != nil {
-			return nil, contextError(ctx)
-		}
-		var flight *materialFlight
-		c.mu.Lock()
-		if c.closed {
-			c.mu.Unlock()
-			return nil, newError("validation")
-		}
-		if haveKey && scripts != nil {
-			if pending := c.flights[key]; pending != nil {
-				c.mu.Unlock()
-				select {
-				case <-ctx.Done():
-					return nil, contextError(ctx)
-				case <-pending.done:
-					if !pending.success {
-						return nil, newError("network")
-					}
-					continue
-				}
-			}
-			cached := c.cache[key]
-			if cached != nil && cached.expires.After(time.Now().Add(5*time.Second)) {
-				body.Scripts = nil
-				body.MaterialRef = cached.ref
-			} else {
-				body.MaterialRef = ""
-				body.Scripts = scripts
-				if len(c.flights) < 128 {
-					flight = &materialFlight{done: make(chan struct{})}
-					c.flights[key] = flight
-				}
-			}
-		}
-		c.mu.Unlock()
-		v, meta, err := c.send(ctx, "POST", "/v1/shape", &body)
-		var result *ShapeResult
-		if err == nil {
-			result, err = parseResult(v, meta, c.apiKey, body.Mode)
-		}
-		c.mu.Lock()
-		if err == nil && haveKey && scripts != nil && body.Scripts != nil && !c.closed {
-			c.remember(key, scripts, body.SourceURL, result)
-		}
-		if flight != nil && c.flights[key] == flight {
-			delete(c.flights, key)
-			flight.success = err == nil
-			close(flight.done)
-		}
-		if err != nil {
-			apiErr, ok := err.(*Error)
-			if !recovered && scripts != nil && body.MaterialRef != "" && ok && apiErr.Kind == "http" && apiErr.StatusCode == 422 && apiErr.Code == "material_expired" && apiErr.BillingStatus == "not_charged" {
-				if cached := c.cache[key]; cached != nil && cached.ref == body.MaterialRef {
-					cached.expires = time.Time{}
-				}
-				recovered = true
-				c.mu.Unlock()
-				continue
-			}
-		}
-		c.mu.Unlock()
-		return result, err
+	frame, ok := v.(map[string]any)
+	if !ok || (frame["path"] != nil && frame["path"] != "native") || frame["fallback_reason"] != nil {
+		meta.Kind = "invalid_response"
+		return nil, meta
 	}
+	return parseResult(v, meta, c.apiKey, body.Mode)
 }
 
-// remember is called with the cache mutex held; it performs no network work.
-func (c *Client) remember(key [32]byte, scripts []ScriptMaterial, sourceURL string, r *ShapeResult) {
-	b, _ := marshalJSON([]any{sourceURL, scripts})
-	size := len(b)
-	if size > 16*1024*1024 {
-		return
-	}
-	if old := c.cache[key]; old != nil {
-		c.cacheBytes -= old.size
-		delete(c.cache, key)
-	}
-	for len(c.cache) > 0 && (len(c.cache) >= 128 || c.cacheBytes+size > 16*1024*1024) {
-		var oldest [32]byte
-		sequence := ^uint64(0)
-		for k, v := range c.cache {
-			if v.sequence < sequence {
-				sequence = v.sequence
-				oldest = k
-			}
-		}
-		c.cacheBytes -= c.cache[oldest].size
-		delete(c.cache, oldest)
-	}
-	expires, _ := time.Parse(time.RFC3339Nano, r.MaterialExpiresAt)
-	c.sequence++
-	c.cache[key] = &materialEntry{ref: r.MaterialRef, sourceURL: sourceURL, scripts: append([]ScriptMaterial(nil), scripts...), expires: expires, size: size, sequence: c.sequence}
-	c.cacheBytes += size
-}
 func (c *Client) Usage(ctx context.Context) (UsageResult, error) {
 	if ctx == nil || c.isClosed() {
 		return nil, newError("validation")

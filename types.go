@@ -26,7 +26,8 @@ type FormMetadata struct {
 	Name *string `json:"name,omitempty"`
 }
 
-// ShapeRequest selects managed material when Scripts and MaterialRef are omitted in header mode.
+// ShapeRequest selects managed material when MaterialRef is omitted in header mode.
+// Scripts is accepted by preparation only; Generate rejects source uploads.
 type ShapeRequest struct {
 	SourceURL      string           `json:"source_url"`
 	Scripts        []ScriptMaterial `json:"scripts,omitempty"`
@@ -37,6 +38,9 @@ type ShapeRequest struct {
 	Mode           string           `json:"mode,omitempty"`
 	Form           *FormMetadata    `json:"form,omitempty"`
 }
+
+// PreparationRequest includes sources used only by Prepare and PrepareAndWait.
+type PreparationRequest = ShapeRequest
 
 // UnmarshalJSON rejects unknown, duplicate and missing required fields, including
 // missing body/content_type fields. Generate also validates constructed requests.
@@ -101,7 +105,7 @@ func (s *ShapeRequest) UnmarshalJSON(data []byte) error {
 	if err = decodeKnown(data, &p); err != nil {
 		return newError("validation")
 	}
-	if _, err = validateShape(ShapeRequest(p)); err != nil {
+	if _, err = validateShape(ShapeRequest(p), true); err != nil {
 		return err
 	}
 	*s = ShapeRequest(p)

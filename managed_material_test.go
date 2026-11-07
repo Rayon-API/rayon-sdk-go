@@ -22,11 +22,11 @@ func TestManagedMaterialOmissionAndMetadata(t *testing.T) {
 		}
 		calls++
 		out := response("ref_0123456789abcdef")
-		out["path"] = "isolated"
+		out["path"] = "native"
 		out["material_reuse"] = false
 		out["discovery_duration_ms"] = 12.5
 		out["discovery_state"] = "failed"
-		out["fallback_reason"] = "unknown_material"
+		out["fallback_reason"] = nil
 		out["fallback_message"] = "A fallback was used. Contact support with this request ID."
 		json.NewEncoder(w).Encode(out)
 	})
@@ -35,12 +35,13 @@ func TestManagedMaterialOmissionAndMetadata(t *testing.T) {
 	}
 	s := shape()
 	s.Scripts = nil
+	s.MaterialRef = ""
 	for i := 0; i < 3; i++ {
 		r, e := c.Generate(context.Background(), s)
 		if e != nil {
 			t.Fatal(e)
 		}
-		if r.Path != "isolated" || r.FallbackReason != "unknown_material" || r.MaterialReuse == nil || *r.MaterialReuse || r.DiscoveryDurationMS == nil || *r.DiscoveryDurationMS != 12.5 {
+		if r.Path != "native" || r.FallbackReason != "" || r.MaterialReuse == nil || *r.MaterialReuse || r.DiscoveryDurationMS == nil || *r.DiscoveryDurationMS != 12.5 {
 			t.Fatal("operation metadata missing")
 		}
 	}
@@ -72,6 +73,7 @@ func TestInvalidOperationMetadata(t *testing.T) {
 		})
 		s := shape()
 		s.Scripts = nil
+		s.MaterialRef = ""
 		if _, e := c.Generate(context.Background(), s); e == nil {
 			t.Fatal("accepted invalid operation metadata")
 		}

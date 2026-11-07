@@ -15,10 +15,10 @@ the target request.
 
 ## Install
 
-Go 1.23+, standard library only. Keep the `/v2` import path.
+Go 1.23+, standard library only. Keep the `/v3` import path.
 
 ```sh
-go get github.com/Rayon-API/rayon-sdk-go/v2@v2.1.0
+go get github.com/Rayon-API/rayon-sdk-go/v3@v3.0.0-rc.1
 ```
 
 ## Generate
@@ -30,7 +30,7 @@ import (
     "context"
     "log"
     "os"
-    rayon "github.com/Rayon-API/rayon-sdk-go/v2"
+    rayon "github.com/Rayon-API/rayon-sdk-go/v3"
 )
 
 func main() {
@@ -46,9 +46,6 @@ func main() {
         },
     })
     if err != nil { log.Fatal(err) }
-    if result.FallbackReason != "" {
-        log.Println("A fallback was used. Contact support with request ID:", result.RequestID)
-    }
     // Apply result.Headers with your target client. Reuse client across calls.
 }
 ```
@@ -62,32 +59,13 @@ request. Keep application headers and session state in your target client.
 Generate fresh telemetry for each request and inspect the target response to
 check acceptance. Rayon returns no target cookies.
 
-## Fallback reporting
+## Material and readiness
 
-A nonempty `FallbackReason` means a fallback was used. Contact support with
-`RequestID` about the mapping issue. `FallbackMessage` provides safe guidance
-when available. Do not infer fallback from timing alone.
+Generation accepts ready managed material or a ready private reference. Custom
+scripts must go through preparation. Unsupported, expired or unprepared inputs
+return an explicit error. Generation does not prepare material or retry automatically.
 
-Results retain optional `Path`, `MaterialReuse`, `DiscoveryState` and
-`DiscoveryDurationMS`. Pointer fields distinguish absent values from false/zero.
-
-## Optional material and preparation
-
-For an explicit override, supply either `scripts` (complete ordered sources) or
-`material_ref` (a private reference), never both. Omit the unused field; null and
-empty values are invalid. Customer uploads and references remain private to the
-API key. Automatic requests should keep both fields omitted on every call so
-new public material can be selected.
-
-Form mode still requires explicit material. Set `mode: "form"`, supply the exact
-URL-encoded POST application body before telemetry insertion, and prepend the
-returned `form_body` once. It contains telemetry only. Preserve duplicate fields
-and encoding. See [form integration](https://docs.rayonapi.com/form-payload-integration).
-
-Preparation is optional for explicit material. It checks the supplied context
-before a workload; it is separate from managed selection and generation.
-Usable validated mappings can be ready without every internal record being mapped.
-Generated headers and form fields must still pass output validation.
+## Custom material requires preparation
 
 ```go
 ready, err := client.PrepareAndWait(ctx, explicitShape)
@@ -97,12 +75,18 @@ explicitShape.MaterialRef = ready.MaterialRef
 result, err := client.Generate(ctx, explicitShape)
 ```
 
-`Prepare`, `GetPreparation`, `WaitUntilReady` and `PrepareAndWait` remain
-available. Waits last at most 60 seconds or the caller's earlier context deadline.
-Cancelling a wait leaves the server job running. Typed errors retain
-`PreparationID` for resumption; terminal kinds are `preparation_failed` and
-`preparation_expired`. Prepare current explicit context again after readiness
-expiry or relevant input changes.
+Submit complete sources and the intended context with the preparation helper. Wait for
+`state: ready`, then use its `material_ref` for generation.
+A queued job can already contain a reference; that does not establish readiness.
+Readiness is scoped to supported inputs. Normal request inputs may vary only within
+that documented scope; an unchanged program does not establish universal coverage.
+
+Refresh custom material outside generation before the earlier of `ready_until` and
+`material_expires_at`, or after a supported deployment change. Wait for the replacement
+to become ready before switching references. Keep original sources on your side for
+refresh. Expired references are never recovered by uploading scripts to a solve call.
+For managed header calls, keep both material fields omitted on every request.
+Form mode requires an explicit ready reference.
 
 ## Client behavior
 
@@ -110,8 +94,7 @@ Reuse one client for connection pooling. `Usage(ctx)` is free; numeric usage
 values use `json.Number`. Default API URL is `https://api.rayonapi.com`, timeout
 45 seconds. `WithBaseURL`, `WithTimeout` and context deadlines configure calls.
 Errors expose safe billing and retry metadata. Check history before retrying
-uncertain outcomes. Only confirmed uncharged material expiry receives one
-recovery with retained explicit source. No other generation error is retried.
+uncertain outcomes. Generation never retries or uploads sources on expiry. Refresh through preparation outside generation.
 Automatic requests keep material omitted on every call.
 
 See [client reference](docs/reference.md), [errors](https://docs.rayonapi.com/errors),

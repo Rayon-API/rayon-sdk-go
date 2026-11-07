@@ -1,11 +1,24 @@
 # Client behavior
 
-Managed header generation omits Scripts and MaterialRef on every call. It selects
-current registered public material without pinning a returned reference. The
-source-cache behavior below applies only to explicit material inputs.
+Reuse one concurrency-safe client for connection pooling. Managed header calls
+omit both material fields on every generation. Custom sources belong to
+`Prepare`/`PrepareAndWait`, not `Generate`. Only a reference with current native
+readiness for the supported context can generate.
 
-Reuse a client for connection pooling and material caching. It retains up to 128 source bundles and 16 MiB, refreshes within five seconds of expiry, and coalesces simultaneous first uploads. Every caller still generates its own fresh result. Cache state is isolated per client and cleared on close or eviction. Keep your own source copy. Failed uploads fail queued calls; canceling a queued caller does not cancel its owner's upload.
+`Prepare` returns a job; `WaitUntilReady` and `PrepareAndWait` return ready metadata.
+A queued job can already contain a reference. Check ready state, validated readiness,
+`ReadyUntil` and `MaterialExpiresAt`. Renew outside generation before the earlier
+deadline and switch references only after the replacement is ready.
 
-The only automatic retry is one HTTP 422 `material_expired` response explicitly marked `billing_status: "not_charged"`, when original source is still retained. Other outcomes are never retried by the SDK. Use `errors.As` with `*rayon.Error` for sanitized `Kind`, `StatusCode`, `RequestID`, `Code`, `Reason`, `Action`, `BillingStatus` and `RetryAfter`. Raw server messages and transport errors are excluded. Check request history before resending ambiguous outcomes.
+`ShapeRequest.Scripts` is retained for `PreparationRequest` compatibility, but
+`Generate` rejects it before transport. Generation never retains a source cache,
+starts preparation, uploads scripts, retries automatically or uses a solve-time preparation.
+The server enforces readiness independently of the SDK.
 
-Default timeout is 45 seconds, covering material queueing and recovery. Context cancellation/deadlines apply to the entire call. Configure `rayon.WithTimeout` or `rayon.WithBaseURL`; HTTPS is required except loopback development servers. Redirects are rejected. The client requests identity encoding and bounds JSON responses to 256 KiB, rejecting compressed responses and duplicate keys.
+Use `errors.As` with `*rayon.Error` for safe status, code, request ID, retry and
+billing metadata. Check request history before resubmitting an uncertain outcome.
+
+Default timeout is 45 seconds. Context cancellation/deadlines cover the call;
+preparation waits have their separate bounded budget. `WithTimeout` and
+`WithBaseURL` configure transport. HTTPS is required except loopback development.
+Redirects are rejected. Responses remain bounded and strictly parsed.

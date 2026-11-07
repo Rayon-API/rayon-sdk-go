@@ -39,8 +39,11 @@ func validURL(s string) bool {
 	}
 	return e == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.Hostname() != "" && u.User == nil && u.Port() != "0"
 }
-func validateShape(s ShapeRequest) (ShapeRequest, error) {
+func validateShape(s ShapeRequest, preparation ...bool) (ShapeRequest, error) {
 	bad := func() (ShapeRequest, error) { return ShapeRequest{}, newError("validation") }
+	if s.Scripts != nil && (len(preparation) == 0 || !preparation[0]) {
+		return bad()
+	}
 	if !validURL(s.SourceURL) || (s.Scripts != nil && s.MaterialRef != "") || (s.Mode == "form" && s.Scripts == nil && s.MaterialRef == "") {
 		return bad()
 	}

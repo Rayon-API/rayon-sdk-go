@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,7 +16,13 @@ import (
 
 func ptr(s string) *string { return &s }
 func shape() ShapeRequest {
-	return ShapeRequest{SourceURL: "https://example.com/page", Scripts: []ScriptMaterial{{URL: "https://example.com/protection.js", Source: "/* complete source */"}}, Profile: Profile{}, Request: TargetRequest{URL: "https://example.com/api", Method: "GET"}}
+	return ShapeRequest{SourceURL: "https://example.com/page", MaterialRef: "material_reference_1", Profile: Profile{}, Request: TargetRequest{URL: "https://example.com/api", Method: "GET"}}
+}
+func explicitShape() ShapeRequest {
+	s := shape()
+	s.MaterialRef = ""
+	s.Scripts = []ScriptMaterial{{URL: "https://example.com/protection.js", Source: "/* complete source */"}}
+	return s
 }
 func response(ref string) map[string]any {
 	return map[string]any{"headers": map[string]string{"X-Test-a": "a", "X-Test-b": "b", "X-Test-c": "c", "X-Test-d": "d", "X-Test-f": "f", "X-Test-z": "z", "X-Test-a0": "a0"}, "request_id": "req_1", "generation_ms": 2, "profile_used": map[string]any{}, "material_ref": ref, "material_expires_at": time.Now().Add(time.Minute).UTC().Format(time.RFC3339Nano)}
@@ -155,47 +160,6 @@ func TestCancellationTimeoutClose(t *testing.T) {
 	_, err = c.Usage(context.Background())
 	kind(t, err, "validation")
 }
-func TestMaterialCoalescingAndRecovery(t *testing.T) {
-	var uploads, refs atomic.Int32
-	var expired atomic.Bool
-	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
-		var body ShapeRequest
-		json.NewDecoder(r.Body).Decode(&body)
-		if len(body.Scripts) > 0 {
-			uploads.Add(1)
-			time.Sleep(20 * time.Millisecond)
-		} else {
-			refs.Add(1)
-			if expired.CompareAndSwap(true, false) {
-				w.WriteHeader(422)
-				fmt.Fprint(w, `{"error":{"code":"material_expired","billing_status":"not_charged"}}`)
-				return
-			}
-		}
-		json.NewEncoder(w).Encode(response("material_reference_1"))
-	})
-	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := c.Generate(context.Background(), shape()); err != nil {
-				t.Error(err)
-			}
-		}()
-	}
-	wg.Wait()
-	if uploads.Load() != 1 || refs.Load() != 19 {
-		t.Fatalf("uploads %d refs %d", uploads.Load(), refs.Load())
-	}
-	expired.Store(true)
-	if _, err := c.Generate(context.Background(), shape()); err != nil {
-		t.Fatal(err)
-	}
-	if uploads.Load() != 2 || refs.Load() != 20 {
-		t.Fatalf("recovery: %d %d", uploads.Load(), refs.Load())
-	}
-}
 func TestProfileContract(t *testing.T) {
 	var fixtures struct {
 		Cases []struct {
@@ -276,50 +240,6 @@ func TestJSONPresenceAndNullRules(t *testing.T) {
 		}
 	}
 }
-func TestCacheRefreshBoundsAndIsolation(t *testing.T) {
-	var uploads atomic.Int32
-	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
-		var s ShapeRequest
-		json.NewDecoder(r.Body).Decode(&s)
-		if s.Scripts != nil {
-			uploads.Add(1)
-		}
-		json.NewEncoder(w).Encode(response("material_reference_1"))
-	})
-	if _, e := c.Generate(context.Background(), shape()); e != nil {
-		t.Fatal(e)
-	}
-	c.mu.Lock()
-	for _, e := range c.cache {
-		e.expires = time.Now().Add(4 * time.Second)
-	}
-	c.mu.Unlock()
-	if _, e := c.Generate(context.Background(), shape()); e != nil {
-		t.Fatal(e)
-	}
-	if uploads.Load() != 2 {
-		t.Fatal("did not refresh")
-	}
-	for i := 0; i < 130; i++ {
-		s := shape()
-		s.Scripts[0].Source = fmt.Sprint(i)
-		if _, e := c.Generate(context.Background(), s); e != nil {
-			t.Fatal(e)
-		}
-	}
-	c.mu.Lock()
-	if len(c.cache) != 128 || c.cacheBytes > 16*1024*1024 {
-		t.Errorf("cache bounds: %d %d", len(c.cache), c.cacheBytes)
-	}
-	c.mu.Unlock()
-	c.Close()
-	c.mu.Lock()
-	if len(c.cache) != 0 || c.cacheBytes != 0 {
-		t.Error("source retained on close")
-	}
-	c.mu.Unlock()
-}
-
 func TestRejectInvalidUTF8ProfileAndPort(t *testing.T) {
 	for _, p := range []Profile{{"user_agent": string([]byte{0xff})}, {"languages": []string{string([]byte{0xff})}}, {"navigator": map[string]any{"vendor": string([]byte{0xff})}}} {
 		if _, e := ValidateProfile(p); e == nil {
@@ -336,7 +256,7 @@ func TestRejectInvalidUTF8ProfileAndPort(t *testing.T) {
 	}
 }
 
-func TestQueuedCallerCancellationAndFailedUpload(t *testing.T) {
+func TestCancellationDoesNotCancelIndependentGeneration(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var calls atomic.Int32
@@ -364,42 +284,9 @@ func TestQueuedCallerCancellationAndFailedUpload(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 	close(release)
 	kind(t, <-owner, "http")
-	kind(t, <-waiter, "network")
-	if calls.Load() != 1 {
-		t.Fatal("failed owner allowed queued generation")
-	}
-}
-func TestCacheBytesAndClientIsolation(t *testing.T) {
-	var uploads atomic.Int32
-	h := func(w http.ResponseWriter, r *http.Request) {
-		var s ShapeRequest
-		json.NewDecoder(r.Body).Decode(&s)
-		if s.Scripts != nil {
-			uploads.Add(1)
-		}
-		json.NewEncoder(w).Encode(response("material_reference_1"))
-	}
-	c := clientFor(t, h)
-	other := clientFor(t, h)
-	for _, client := range []*Client{c, other} {
-		if _, e := client.Generate(context.Background(), shape()); e != nil {
-			t.Fatal(e)
-		}
-	}
-	if uploads.Load() != 2 {
-		t.Fatal("clients shared cache")
-	}
-	for i := 0; i < 8; i++ {
-		s := shape()
-		s.Scripts = []ScriptMaterial{{URL: "https://example.com/a.js", Source: strings.Repeat("x", 2*1024*1024)}, {URL: "https://example.com/b.js", Source: strings.Repeat("y", 1024*1024-10) + fmt.Sprint(i)}}
-		if _, e := c.Generate(context.Background(), s); e != nil {
-			t.Fatal(e)
-		}
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.cacheBytes > 16*1024*1024 || len(c.cache) > 5 {
-		t.Fatalf("byte cap failed: %d entries %d bytes", len(c.cache), c.cacheBytes)
+	kind(t, <-waiter, "http")
+	if calls.Load() != 2 {
+		t.Fatal("independent requests must not share generation results")
 	}
 }
 func TestTrustedGuidance(t *testing.T) {
@@ -431,7 +318,7 @@ func TestInvalidProfilesAndRequests(t *testing.T) {
 			t.Errorf("accepted %#v", p)
 		}
 	}
-	for _, change := range []func(*ShapeRequest){func(s *ShapeRequest) { s.Request.Body = ptr("") }, func(s *ShapeRequest) { s.DocumentCookie = ptr("a=b\r\n") }, func(s *ShapeRequest) { s.MaterialRef = "material_reference_1" }, func(s *ShapeRequest) { s.Mode = "form" }, func(s *ShapeRequest) { s.Form = &FormMetadata{} }} {
+	for _, change := range []func(*ShapeRequest){func(s *ShapeRequest) { s.Request.Body = ptr("") }, func(s *ShapeRequest) { s.DocumentCookie = ptr("a=b\r\n") }, func(s *ShapeRequest) { s.MaterialRef = "short" }, func(s *ShapeRequest) { s.Mode = "form" }, func(s *ShapeRequest) { s.Form = &FormMetadata{} }} {
 		s := shape()
 		change(&s)
 		if _, e := validateShape(s); e == nil {

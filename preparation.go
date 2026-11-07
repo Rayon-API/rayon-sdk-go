@@ -164,11 +164,11 @@ func (p *Preparation) ready() (*ReadyMaterial, error) {
 
 // Prepare explicitly creates a job; it never performs a billable generation.
 // Each invocation receives a fresh idempotency key. POST is not automatically retried.
-func (c *Client) Prepare(ctx context.Context, shape ShapeRequest) (*Preparation, error) {
+func (c *Client) Prepare(ctx context.Context, shape PreparationRequest) (*Preparation, error) {
 	if ctx == nil || c.isClosed() || (shape.Scripts == nil && shape.MaterialRef == "") {
 		return nil, newError("validation")
 	}
-	body, e := validateShape(shape)
+	body, e := validateShape(shape, true)
 	if e != nil {
 		return nil, e
 	}
@@ -281,7 +281,7 @@ func (c *Client) WaitUntilReady(ctx context.Context, id string) (*ReadyMaterial,
 }
 
 // PrepareAndWait explicitly creates a job, then waits until ready or terminal.
-func (c *Client) PrepareAndWait(ctx context.Context, shape ShapeRequest) (*ReadyMaterial, error) {
+func (c *Client) PrepareAndWait(ctx context.Context, shape PreparationRequest) (*ReadyMaterial, error) {
 	p, e := c.Prepare(ctx, shape)
 	if e != nil {
 		return nil, e

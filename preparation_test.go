@@ -35,14 +35,14 @@ func TestPrepareExplicitFullContextAndUniqueKeys(t *testing.T) {
 		keys = append(keys, r.Header.Get("Idempotency-Key"))
 		var body ShapeRequest
 		json.NewDecoder(r.Body).Decode(&body)
-		if body.Scripts[0].Source != shape().Scripts[0].Source {
+		if body.Scripts[0].Source != explicitShape().Scripts[0].Source {
 			t.Error("lost context")
 		}
 		w.WriteHeader(202)
 		json.NewEncoder(w).Encode(prepFrame("queued"))
 	})
 	for i := 0; i < 2; i++ {
-		p, e := c.Prepare(context.Background(), shape())
+		p, e := c.Prepare(context.Background(), explicitShape())
 		if e != nil || p.State != "queued" {
 			t.Fatalf("%#v %v", p, e)
 		}
@@ -197,7 +197,7 @@ func TestPreparationNeverRetriesAmbiguousPOSTAndRejectsGET202(t *testing.T) {
 		w.WriteHeader(503)
 		fmt.Fprint(w, `{"error":{"code":"unavailable"}}`)
 	})
-	_, e := c.Prepare(context.Background(), shape())
+	_, e := c.Prepare(context.Background(), explicitShape())
 	if e == nil || calls != 1 {
 		t.Fatalf("%v %d", e, calls)
 	}
@@ -219,7 +219,7 @@ func TestPrepareAndWaitExplicitSequence(t *testing.T) {
 		}
 		json.NewEncoder(w).Encode(prepFrame(state))
 	})
-	r, e := c.PrepareAndWait(context.Background(), shape())
+	r, e := c.PrepareAndWait(context.Background(), explicitShape())
 	if e != nil || r.State != "ready" || len(paths) != 2 || paths[0] != "/v1/materials/prepare" {
 		t.Fatalf("%#v %v %v", r, e, paths)
 	}
