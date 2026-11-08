@@ -224,13 +224,13 @@ func transientPreparation(e error) bool {
 	return false
 }
 
-// WaitUntilReady polls one existing job for at most 60 seconds and respects ctx.
+// WaitUntilReady polls one existing job for at most 30 minutes and respects ctx.
 // Cancelling the context cancels this wait, leaving the server job available to resume.
 func (c *Client) WaitUntilReady(ctx context.Context, id string) (*ReadyMaterial, error) {
 	if ctx == nil || !refRE.MatchString(id) || strings.Contains(id, c.apiKey) || c.isClosed() {
 		return nil, newError("validation")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	for {
 		if ctx.Err() != nil {

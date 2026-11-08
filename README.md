@@ -18,7 +18,7 @@ the target request.
 Go 1.23+, standard library only. Keep the `/v3` import path.
 
 ```sh
-go get github.com/Rayon-API/rayon-sdk-go/v3@v3.0.0-rc.1
+go get github.com/Rayon-API/rayon-sdk-go/v3@v3.0.0-rc.2
 ```
 
 ## Generate
@@ -66,6 +66,9 @@ scripts must go through preparation. Unsupported, expired or unprepared inputs
 return an explicit error. Generation does not prepare material or retry automatically.
 
 ## Custom material requires preparation
+
+Preparation can take several minutes. Wait helpers return as soon as ready, with a
+30-minute default limit. Timeouts and cancellation leave the job available to resume.
 
 ```go
 ready, err := client.PrepareAndWait(ctx, explicitShape)
