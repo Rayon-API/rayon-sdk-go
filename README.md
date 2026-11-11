@@ -18,7 +18,7 @@ the target request.
 Go 1.23+, standard library only. Keep the `/v3` import path.
 
 ```sh
-go get github.com/Rayon-API/rayon-sdk-go/v3@v3.0.0-rc.2
+go get github.com/Rayon-API/rayon-sdk-go/v3@v3.0.0
 ```
 
 ## Generate
