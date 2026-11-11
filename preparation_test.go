@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -263,5 +264,45 @@ func TestPreparationErrorStringBounds(t *testing.T) {
 		})
 		_, e := c.GetPreparation(context.Background(), prepID)
 		kind(t, e, "invalid_response")
+	}
+}
+
+type preparationWaitTransport func(*http.Request) (*http.Response, error)
+
+func (f preparationWaitTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestPreparationWaitAllowsLongerJobsAndHonorsCallerDeadline(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		ctx := context.Background()
+		cancel := func() {}
+		if explicit {
+			ctx, cancel = context.WithTimeout(ctx, 90*time.Second)
+		}
+		c, err := NewClient("owned-test-key", WithTimeout(time.Hour))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var remaining time.Duration
+		c.http.Transport = preparationWaitTransport(func(r *http.Request) (*http.Response, error) {
+			deadline, ok := r.Context().Deadline()
+			if !ok {
+				t.Fatal("missing bounded request deadline")
+			}
+			remaining = time.Until(deadline)
+			data, _ := json.Marshal(prepFrame("ready"))
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(string(data))), Request: r}, nil
+		})
+		ready, err := c.WaitUntilReady(ctx, prepID)
+		cancel()
+		c.Close()
+		if err != nil || ready == nil {
+			t.Fatalf("wait failed: %v", err)
+		}
+		if explicit && (remaining < 85*time.Second || remaining > 91*time.Second) {
+			t.Fatalf("caller deadline was shortened: %v", remaining)
+		}
+		if !explicit && (remaining < 20*time.Minute || remaining > 31*time.Minute) {
+			t.Fatalf("default budget does not cover preparation: %v", remaining)
+		}
 	}
 }
