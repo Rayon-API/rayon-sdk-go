@@ -120,7 +120,8 @@ func (c *Client) Generate(ctx context.Context, shape ShapeRequest) (*ShapeResult
 		return nil, err
 	}
 	frame, ok := v.(map[string]any)
-	if !ok || (frame["path"] != nil && frame["path"] != "native") || frame["fallback_reason"] != nil {
+	if !ok || !(((frame["path"] == nil || frame["path"] == "native") && frame["fallback_reason"] == nil) ||
+		(frame["path"] == "isolated" && frame["fallback_reason"] == "material_preparing")) {
 		meta.Kind = "invalid_response"
 		return nil, meta
 	}
@@ -174,6 +175,9 @@ func (c *Client) send(ctx context.Context, method, path string, body *ShapeReque
 		return nil, nil, newError("validation")
 	}
 	r.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if path == "/v1/shape" {
+		r.Header.Set("X-Rayon-Capabilities", "managed-fallback-v1")
+	}
 	if option.idempotency != "" {
 		r.Header.Set("Idempotency-Key", option.idempotency)
 	}
