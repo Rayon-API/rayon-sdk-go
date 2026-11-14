@@ -18,7 +18,7 @@ the target request.
 Go 1.23+, standard library only. Keep the `/v3` import path.
 
 ```sh
-go get github.com/Rayon-API/rayon-sdk-go/v3@v3.0.0
+go get github.com/Rayon-API/rayon-sdk-go/v3@v3.0.1
 ```
 
 ## Generate
@@ -64,6 +64,13 @@ check acceptance. Rayon returns no target cookies.
 Generation accepts ready managed material or a ready private reference. Custom
 scripts must go through preparation. Unsupported, expired or unprepared inputs
 return an explicit error. Generation does not prepare material or retry automatically.
+
+SDK 3.0.1 accepts a successful managed preparation fallback with `path: isolated`
+and `fallback_reason: material_preparing`. These fields remain available on the
+result so your application can report degraded operation. The SDK advertises this
+capability automatically; generation request bodies stay unchanged. Older SDKs
+remain native-only on a server configured for the capability migration. A fallback
+requires fresh managed material and is never an automatic retry by the SDK.
 
 ## Custom material requires preparation
 
